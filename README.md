@@ -98,31 +98,122 @@ git merge upstream/<新tag名>
 ---
 ---
 
-<h1 align="center">Web Clipper</h1>
+<h1 align="center">Web Clipper (Notion PAT Fixed)</h1>
 <p align="center">
-    <a href="https://github.com/webclipper/web-clipper/actions">
-      <img src="https://github.com/webclipper/web-clipper/workflows/CI%20Test/badge.svg" alt="CI Test Status">
-    </a>
-     <a href="https://github.com/webclipper/web-clipper/actions">
-      <img src="https://github.com/webclipper/web-clipper/workflows/Release resource/badge.svg" alt="Release resource status">
-    </a>
-    <a href="https://codecov.io/gh/webclipper/web-clipper">
-      <img src="https://img.shields.io/codecov/c/github/webclipper/web-clipper/master.svg?style=flat-square" alt="Codecov">
-    </a>
+  <a href="https://github.com/webclipper/web-clipper">
+    <img src="https://img.shields.io/badge/Fork%20from-webclipper%2Fweb--clipper-v1.42.0-blue?style=flat-square" alt="Fork from webclipper/web-clipper v1.42.0">
+  </a>
+  <a href="https://github.com/zq7969/web-clipper-notion-pat-fixed/releases">
+    <img src="https://img.shields.io/github/v/release/zq7969/web-clipper-notion-pat-fixed?style=flat-square" alt="Latest Release">
+  </a>
+  <img src="https://img.shields.io/badge/license-GPL--2.0--or--later-blue?style=flat-square" alt="License">
 </p>
 
-You can use Web Clipper to save anything on the web to anywhere.
+> **This is a fork of [webclipper/web-clipper](https://github.com/webclipper/web-clipper) v1.42.0**. The original project used an **unofficial Notion private v3 API (cookie injection + declarativeNetRequest header rewriting)** that started failing with **401 Unauthorized** across the board after Notion tightened its security policies. The original repo has not been updated for 10+ months.
+>
+> This fork completely rewrites the Notion backend module to use the **official Notion v1 REST API (version `2026-03-11`) + Personal Access Token (PAT)** authentication — for long-term, stable Notion clipping.
+>
+> All other backends (Joplin / Yuque / Obsidian / Bear / GitHub / OneNote / etc.) are **untouched** and work exactly as in the original; only Notion code was rewritten.
+>
+> **License**: Same as upstream — **GPL-2.0-or-later** (see [LICENSE](LICENSE) in this repo).
 
-<img src="https://clipper.website/static/image/screenshot.png">
+---
 
-### Support Site
+## ✨ What's changed in this fork
+
+| Item | Original v1.42.0 (broken for Notion) | This fixed fork |
+| --- | --- | --- |
+| **Notion API** | Private v3 (cookie + DNR header injection; breaks every 6–12 mo) | ✅ **Official Notion v1 REST API (`2026-03-11`)** |
+| **Auth** | Manual cookie extraction from extension dev tools (extremely unstable) | ✅ **Personal Access Token (PAT)** (starts with `ntn_`, standard & long-lived) |
+| **Notion search compatibility** | Only handled `page` / `database`; new-style DBs invisible | ✅ Compatible with Notion 2026-03-11 **`data_source`** object type (Database API refactor) |
+| **Empty-list UX** | Dropdown silently showed "No data" — users got stuck | ✅ **Detailed English error thrown directly at validation step**, walking users through "Share page/DB with Integration" |
+| **DB write required fields** | Didn't set `properties.title` → wrote 400 Validation Error | ✅ Auto-injects a safe `properties.title` when parent is `database` or `data_source` |
+| **Core endpoints** | — | `GET /v1/users/me` · `POST /v1/search` (paginated up to 500) · `POST /v1/pages` (uses native API markdown field; no block stitching) |
+
+---
+
+## 🚀 Install (Chrome / Edge) + Notion Setup — 4 steps
+
+### 1️⃣ Download the extension zip & load unpacked
+1. Go to the [**Releases page of this fork**](https://github.com/zq7969/web-clipper-notion-pat-fixed/releases) and download the **latest `web-clipper-chrome.zip`**.
+   ⚠️ **Do NOT use the Chrome/Edge web store versions** — those are the original broken v1.42.0 and will still give you 401 when you try to clip to Notion.
+2. Open `chrome://extensions` (or `edge://extensions` for Edge) → toggle **Developer mode** ON in the top-right corner.
+3. Unzip the file you just downloaded.
+4. Click **Load unpacked** → select the unzipped folder. The extension will appear in your toolbar.
+
+### 2️⃣ Create your own Notion PAT (Personal Access Token)
+1. Open: https://www.notion.so/my-integrations
+2. Click **+ New integration** in the top-right.
+3. Give it any name (e.g. `My Web Clipper`) → **Integration type = Internal** → click **Submit**.
+4. Under the **Secrets** section, click **Show** → copy the long token starting with **`ntn_`** (it's only shown once — save it!).
+
+### 3️⃣ ⚠️ REQUIRED: Share your target pages/databases with the Integration (causes 99% of "No data" issues)
+This is Notion's intentional security design: **a PAT starts with ZERO page access. You must grant it explicitly.**
+1. Open every Notion page / database you want to clip things into.
+2. Top-right click the **···** three-dot menu → choose **Add connections** (sometimes "Connections" / "Link to integrations").
+3. Search for the Integration name you created in step 2 (e.g. `My Web Clipper`) → select it → click **Confirm**.
+4. Repeat for *all* pages / databases you want in the "Default repository" dropdown.
+
+### 4️⃣ Paste the PAT into Web Clipper & verify
+1. Open any random web page → click the Web Clipper toolbar icon → click **Add account** → choose **Notion**.
+2. Paste your `ntn_` token from step 2 into the **Personal Access Token** field.
+3. Click **Verify** (or the equivalent validation button):
+   - If you see a "Repository list is empty" error → go back to Step 3 and Share more pages / databases with your Integration.
+   - If verification succeeds → the **Default repository** dropdown will populate → pick one → click Save.
+4. Done 🎉 You can now click Web Clipper on any page, pick Notion, and clip directly with stable long-term support.
+
+---
+
+## 🔨 Build from source
+
+```bash
+# Prerequisites: Node.js >= 16 (18 LTS recommended), pnpm 8 (packageManager field is set in package.json)
+git clone https://github.com/zq7969/web-clipper-notion-pat-fixed.git
+cd web-clipper-notion-pat-fixed
+
+pnpm install          # install dependencies
+pnpm run release      # build MV3 production release zip
+# Output: release/web-clipper-chrome.zip
+
+pnpm run dev          # dev watch mode (HMR output -> dist/chrome, load dist folder directly)
+pnpm run test         # run unit tests (vitest)
+```
+
+---
+
+## 🔄 Syncing with upstream (official repo)
+
+This repo automatically checks if upstream `webclipper/web-clipper` published a **new Release tag** every day at **00:00 UTC = 08:00 Beijing time**. If a new tag is found, the GitHub Actions workflow will automatically:
+1. Merge the upstream release commit on top of main
+2. Install deps → run `pnpm run test` → run `pnpm run release`
+3. Bump `.upstream-last-tag`, commit & push main
+4. Publish a **GitHub Release** with tag `<upstreamTag>-pat-fixed` (e.g. `v1.43.0-pat-fixed`) and attach the fresh `web-clipper-chrome.zip`.
+
+If the merge step encounters conflicts, the workflow **fails immediately** and GitHub will send you an email. You will need to resolve manually:
+```bash
+git fetch upstream
+git merge upstream/<NEW_TAG_NAME>
+# fix conflicts → pnpm run release → git push origin main → publish release manually
+```
+
+---
+
+## 💬 Feedback / Issues
+- **About this fork (Notion fix related)** → please file in [Issues of THIS repository](https://github.com/zq7969/web-clipper-notion-pat-fixed/issues)
+- **About other Web Clipper backends / original features** → go to the official repo [webclipper/web-clipper/issues](https://github.com/webclipper/web-clipper/issues)
+
+---
+
+## 📚 All Supported Services (unchanged from original)
+
+Web Clipper lets you save anything on the web to **any** of these destinations (only Notion was fixed; all others work exactly as before):
 
 - [FlowUs](https://flowus.cn/)
 - [Obsidian](https://obsidian.md/)
-- [Github](https://github.com)
+- [GitHub](https://github.com)
 - [Yuque](https://www.yuque.com)
 - [Buildin.AI](https://buildin.ai/product)
-- [Notion](https://www.notion.so/)
+- [Notion](https://www.notion.so/) **← Fixed in this fork ✅**
 - [Youdao](https://note.youdao.com/)
 - [OneNote](https://www.onenote.com/)
 - [Bear](https://bear.app)
@@ -137,42 +228,4 @@ You can use Web Clipper to save anything on the web to anywhere.
 - [Ulysses](https://ulysses.app/)
 - [Confluence](https://www.atlassian.com/software/confluence)
 
-### Install
-
-- [Chrome](https://chrome.google.com/webstore/detail/web-clipper/mhfbofiokmppgdliakminbgdgcmbhbac)
-
-- [Edge](https://microsoftedge.microsoft.com/addons/detail/opejamnnohhbjflpbhnmdlknhjkfhfdp)
-
-ps: Because the review takes a week, the version will fall behind.
-
-#### From Github
-
-1. Download the webclipper.zip from [release page](https://github.com/webclipper/web-clipper/releases)
-2. Go to **chrome://extensions/** and check the box for **Developer mode** in the top right.
-3. Locate the ZIP file on your computer and unzip it.
-4. Go back to the chrome://extensions/ page and click the **Load unpacked extension** button and select the unzipped folder for your extension to install it.
-
-### Develop
-
-```bash
-$ git clone https://github.com/webclipper/web-clipper.git
-$ cd web-clipper
-$ npm i
-$ npm run dev
-```
-
-- You should load the 'dist/chrome' folder in Chrome.
-
-- You should load the 'dist/manifest.json' folder in Firefox.
-
-### Test
-
-```bash
-$ npm run test
-```
-
-### Feedback
-
-| Type     | Link                                                 |
-| -------- | ---------------------------------------------------- |
-| Telegram | [Link](https://t.me/joinchat/HoVttRRUIA6aXASixzoqAw) |
+<img src="https://clipper.website/static/image/screenshot.png" alt="Web Clipper screenshot">
