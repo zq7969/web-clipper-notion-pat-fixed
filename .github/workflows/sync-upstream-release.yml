@@ -1,0 +1,179 @@
+name: Sync Upstream Release & Auto Release (Notion PAT Fixed)
+
+on:
+  schedule:
+    # Every day at UTC 00:00 = Beijing Time 08:00
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    description: 'Manual trigger: check upstream latest release and sync if there is a new tag'
+
+# Prevent multiple sync runs from happening at the same time
+concurrency: sync-upstream
+
+permissions:
+  contents: write
+
+jobs:
+  sync-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout this fork repository (full history, required for merge)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set git identity (GitHub Actions bot)
+        run: |
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote (official webclipper/web-clipper) & fetch tags
+        run: |
+          git remote add upstream https://github.com/webclipper/web-clipper.git
+          git fetch upstream --tags
+
+      - name: Read local last-synced upstream tag
+        id: read_local_tag
+        run: |
+          LAST_TAG=$(cat .upstream-last-tag | xargs) # trim newline/whitespace
+          echo "last_tag=$LAST_TAG" >> "$GITHUB_OUTPUT"
+          echo "Local last-synced upstream tag: $LAST_TAG"
+
+      - name: Query official latest upstream release tag
+        id: query_upstream
+        run: |
+          # Call public GitHub API for latest release of webclipper/web-clipper
+          NEW_TAG=$(curl -fsSL "https://api.github.com/repos/webclipper/web-clipper/releases/latest" \
+            | python3 -c "import sys, json; print(json.load(sys.stdin)['tag_name'])")
+          if [ -z "$NEW_TAG" ]; then
+            echo "ERROR: failed to query upstream latest release tag"
+            exit 1
+          fi
+          echo "new_tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+          echo "Official upstream latest release tag: $NEW_TAG"
+
+      - name: Compare tags — skip if no new upstream release
+        id: compare
+        run: |
+          LAST="${{ steps.read_local_tag.outputs.last_tag }}"
+          NEW="${{ steps.query_upstream.outputs.new_tag }}"
+          if [ "$LAST" = "$NEW" ]; then
+            echo "has_new=false" >> "$GITHUB_OUTPUT"
+            echo "✅ No new upstream release (last-synced $LAST == latest $NEW) — exiting gracefully."
+            exit 0
+          else
+            echo "has_new=true" >> "$GITHUB_OUTPUT"
+            echo "🆕 Found new upstream release! $LAST → $NEW"
+          fi
+
+      - name: Merge upstream new release tag into main (fail on conflicts)
+        if: steps.compare.outputs.has_new == 'true'
+        env:
+          NEW_TAG: ${{ steps.query_upstream.outputs.new_tag }}
+        run: |
+          echo "Attempting to merge upstream tag $NEW_TAG into main..."
+          git merge "$NEW_TAG" -m "chore(upstream): merge upstream release tag $NEW_TAG"
+          echo "✅ Merge succeeded."
+
+      - name: Setup Node.js 16.x & pnpm 8
+        if: steps.compare.outputs.has_new == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '16.x'
+
+      - name: Setup pnpm (match packageManager field)
+        if: steps.compare.outputs.has_new == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.14.0
+          run_install: false
+
+      - name: Get pnpm store path (for cache key)
+        if: steps.compare.outputs.has_new == 'true'
+        id: pnpm-store
+        shell: bash
+        run: |
+          echo "store_path=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm modules
+        if: steps.compare.outputs.has_new == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.store_path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies (strict frozen lockfile)
+        if: steps.compare.outputs.has_new == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Run unit tests
+        if: steps.compare.outputs.has_new == 'true'
+        run: pnpm run test
+
+      - name: Build Chrome MV3 release zip
+        if: steps.compare.outputs.has_new == 'true'
+        run: |
+          pnpm run release
+          ls -lh release/web-clipper-chrome.zip
+
+      - name: Update .upstream-last-tag & commit
+        if: steps.compare.outputs.has_new == 'true'
+        id: commit_bump
+        env:
+          NEW_TAG: ${{ steps.query_upstream.outputs.new_tag }}
+        run: |
+          echo -n "$NEW_TAG" > .upstream-last-tag
+          git add .upstream-last-tag
+          git commit -m "chore: bump upstream last-synced tag to $NEW_TAG"
+          echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Push updated main branch back to origin
+        if: steps.compare.outputs.has_new == 'true'
+        env:
+          PAT: ${{ secrets.PAT }}
+        run: |
+          if [ -z "$PAT" ]; then
+            echo "ERROR: Repository secret PAT is missing! Please add PAT (Classic token with repo + workflow scopes) in: Settings → Secrets and variables → Actions → New repository secret → Name: PAT"
+            exit 1
+          fi
+          # Authenticate push with PAT via URL (avoids interactive password prompt)
+          PUSH_URL="https://x-access-token:${PAT}@github.com/${GITHUB_REPOSITORY}.git"
+          git push "$PUSH_URL" HEAD:main
+
+      - name: Publish GitHub Release with chrome zip attached
+        if: steps.compare.outputs.has_new == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.query_upstream.outputs.new_tag }}-pat-fixed
+          name: ${{ steps.query_upstream.outputs.new_tag }} (Notion PAT Fixed — Upstream Sync)
+          body: |
+            ## Auto-sync from upstream official release
+
+            This release is **automatically** generated by GitHub Actions.
+
+            - **Upstream repo**: [webclipper/web-clipper](https://github.com/webclipper/web-clipper)
+            - **Upstream release tag**: `${{ steps.query_upstream.outputs.new_tag }}`
+            - **Sync commit on main**: `${{ steps.commit_bump.outputs.commit_sha }}`
+
+            ### What is included in this fork
+            Same changes as always — the Notion backend has been fully migrated:
+            - Removed unstable private Notion v3 API (~400 lines)
+            - Switched to **Notion Official v1 REST API (2026-03-11)** + **Personal Access Token (PAT)** authentication
+            - Compatible with Notion `data_source` object type (2026-03-11 Database API refactor)
+            - Detailed Chinese error prompt if no pages/databases are shared with the Integration
+            - Auto fallback `properties.title` when parent is database / data_source
+
+            ### Installation (Chrome / Edge)
+            1. Download **`web-clipper-chrome.zip`** below and unzip it
+            2. Go to `chrome://extensions` → enable **Developer mode** → click **Load unpacked** → select the unzipped folder
+            3. See full Chinese guide (with Notion PAT + Share steps) in the repo README.
+
+            Build command: `pnpm install --frozen-lockfile && pnpm run release`
+          files: |
+            release/web-clipper-chrome.zip
+          token: ${{ secrets.PAT }}
+          fail_on_unmatched_files: true
+          generate_release_notes: false
