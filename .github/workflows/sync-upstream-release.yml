@@ -19,7 +19,7 @@ jobs:
 
     steps:
       - name: Checkout this fork repository (full history, required for merge)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.3.0  # v4.3.x supports Node 24 runner (suppresses Node 20 deprecation warning)
         with:
           fetch-depth: 0
 
