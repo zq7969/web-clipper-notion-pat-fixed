@@ -81,23 +81,6 @@ pnpm run test         # run unit tests (vitest)
 
 ---
 
-## 🔄 Syncing with upstream (official repo)
-
-This repo automatically checks if upstream `webclipper/web-clipper` published a **new Release tag** every day at **00:00 UTC = 08:00 Beijing time**. If a new tag is found, the GitHub Actions workflow will automatically:
-1. Merge the upstream release commit on top of main
-2. Install deps → run `pnpm run test` → run `pnpm run release`
-3. Bump `.upstream-last-tag`, commit & push main
-4. Publish a **GitHub Release** with tag `<upstreamTag>-pat-fixed` (e.g. `v1.43.0-pat-fixed`) and attach the fresh `web-clipper-chrome.zip`.
-
-If the merge step encounters conflicts, the workflow **fails immediately** and GitHub will send you an email. You will need to resolve manually:
-```bash
-git fetch upstream
-git merge upstream/<NEW_TAG_NAME>
-# fix conflicts → pnpm run release → git push origin main → publish release manually
-```
-
----
-
 ## 💬 Feedback / Issues
 - **About this fork (Notion fix related)** → please file in [Issues of THIS repository](https://github.com/zq7969/web-clipper-notion-pat-fixed/issues)
 - **About other Web Clipper backends / original features** → go to the official repo [webclipper/web-clipper/issues](https://github.com/webclipper/web-clipper/issues)
@@ -209,19 +192,6 @@ pnpm run release      # 构建 MV3 release 包
 
 pnpm run dev          # 开发模式（watch 热更新，产物 dist/chrome，直接加载 dist 文件夹即可）
 pnpm run test         # 跑单元测试
-```
-
----
-
-## 🔄 同步官方原仓库更新
-
-本仓库每天 UTC 0 点（北京时间早上 8 点）会自动检查官方 `webclipper/web-clipper` 是否发布了新 Release tag；如果有，会自动 merge 官方更新 → 跑测试 → 重新构建 → 发新版 Release（tag 格式 `官方tag-pat-fixed`，比如 `v1.43.0-pat-fixed`）。
-
-如果合并遇到冲突，会直接失败并通过 GitHub 邮件通知你，你需要手动执行：
-```bash
-git fetch upstream
-git merge upstream/<新tag名>
-# 解决冲突 → pnpm run release → 推送到 GitHub → 手动发 Release
 ```
 
 ---
