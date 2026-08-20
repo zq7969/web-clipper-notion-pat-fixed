@@ -15,7 +15,8 @@
 >
 > All other backends (Joplin / Yuque / Obsidian / Bear / GitHub / OneNote / etc.) are **untouched** and work exactly as in the original; only Notion code was rewritten.
 >
-> **License**: Same as upstream — **GPL-2.0-or-later** (see [LICENSE](LICENSE) in this repo).
+> **License**: This project is licensed under **GPL-2.0-or-later**.  
+> Original code © 2020 DiamondYuan. See [LICENSE](LICENSE) in this repo for the full text.
 
 ---
 
@@ -132,7 +133,7 @@ Web Clipper lets you save anything on the web to **any** of these destinations (
 >
 > 保留原项目所有其它后端服务（Joplin / Yuque / Obsidian / Bear / GitHub / OneNote 等）完全不变；仅 Notion 相关代码重写。
 >
-> 协议：**与原仓库保持一致 — GPL-2.0-or-later**（见仓库内 [LICENSE](LICENSE)）
+> 协议：本项目基于 **GPL-2.0-or-later** 协议开源。原始代码 © 2020 DiamondYuan。完整协议见仓库内 [LICENSE](LICENSE)。
 
 ---
 
