@@ -1,6 +1,6 @@
 import localeService from '@/common/locales';
 import axios, { AxiosInstance } from 'axios';
-import { CreateDocumentRequest, DocumentService } from '../../index';
+import { CreateDocumentRequest, DocumentService, GetRepositoriesOptions } from '../../index';
 import { CompleteStatus, UnauthorizedError } from './../interface';
 import { NotionRepository } from './types';
 
@@ -27,6 +27,14 @@ interface NotionSearchResponse {
     object: 'page' | 'database' | 'data_source' | string;
     properties?: Record<string, any>;
     title?: Array<{ plain_text: string }>;
+    parent?: {
+      type: 'workspace' | 'page_id' | 'database_id' | 'data_source_id' | 'block_id' | string;
+      workspace?: boolean;
+      page_id?: string;
+      database_id?: string;
+      data_source_id?: string;
+      block_id?: string;
+    };
   }>;
   next_cursor: string | null;
   has_more: boolean;
@@ -42,6 +50,16 @@ export default class NotionDocumentService implements DocumentService {
   private token: string;
   private repositories: NotionRepository[];
   private me?: NotionUserResponse;
+  // Two-level cache so toggling the "show all pages" switch in the UI does not
+  // re-hit Notion search on every click:
+  //   - root cache: populated on the very first (default) call with root-only
+  //     filter applied; stays fast even in large workspaces.
+  //   - all cache: populated LAZILY only when the user explicitly flips the
+  //     switch ON. Never fetched for users who stick to root pages.
+  // Once populated, caches live for the lifetime of this service instance
+  // (they are tied to a single PAT / verify session in the UI).
+  private cachedRootRepos: NotionRepository[] | null = null;
+  private cachedAllRepos: NotionRepository[] | null = null;
 
   constructor({ personalAccessToken }: NotionServiceConfig) {
     if (!personalAccessToken) {
@@ -112,7 +130,16 @@ export default class NotionDocumentService implements DocumentService {
     };
   };
 
-  getRepositories = async () => {
+  /**
+   * Actually call Notion search API and build NotionRepository entries.
+   *
+   * When `showAllPages` is false (default), a parent.type === 'workspace'
+   * filter is applied at item-level so we only ship root-level repos back.
+   * When true, every accessible page / database / data_source is included.
+   */
+  private async fetchRepositoriesFromApi(
+    showAllPages: boolean
+  ): Promise<NotionRepository[]> {
     const result: NotionRepository[] = [];
     let cursor: string | null = null;
     let pageCount = 0;
@@ -131,6 +158,17 @@ export default class NotionDocumentService implements DocumentService {
       const { data } = await this.request.post<NotionSearchResponse>('/search', body);
       data.results.forEach((item) => {
         if (item.object === 'page' || item.object === 'database' || item.object === 'data_source') {
+          if (!showAllPages) {
+            const parentType = item.parent?.type;
+            const isRoot =
+              parentType === 'workspace' ||
+              !parentType ||
+              (item as any).parent === null ||
+              (item as any).parent?.workspace === true;
+            if (!isRoot) {
+              return;
+            }
+          }
           let title = '(Untitled)';
           try {
             if (item.properties) {
@@ -166,14 +204,55 @@ export default class NotionDocumentService implements DocumentService {
       cursor = data.has_more ? data.next_cursor : null;
       pageCount++;
     } while (cursor && pageCount < MAX_PAGES);
+    return result;
+  }
+
+  getRepositories = async (options?: GetRepositoriesOptions) => {
+    const showAllPages = options?.showAllPages === true;
+
+    // Cache hit -> instant return without re-hitting Notion.
+    // The two caches are independent: default users never pay the (potentially
+    // large) "fetch every sub-page" tax; power users pay it only once per
+    // session, immediately after flipping the switch ON.
+    if (showAllPages) {
+      if (this.cachedAllRepos !== null) {
+        this.repositories = this.cachedAllRepos;
+        return this.repositories;
+      }
+    } else {
+      if (this.cachedRootRepos !== null) {
+        this.repositories = this.cachedRootRepos;
+        return this.repositories;
+      }
+    }
+
+    const result = await this.fetchRepositoriesFromApi(showAllPages);
+
     if (result.length === 0) {
+      if (showAllPages) {
+        throw new Error(
+          localeService.format({
+            id: 'backend.services.notion.repository.emptyAll',
+            defaultMessage:
+              'No accessible pages or databases found at all. Please open any target in Notion → click ... → Add connections → select your PAT integration → Confirm.',
+          })
+        );
+      }
       throw new Error(
         localeService.format({
           id: 'backend.services.notion.repository.empty',
           defaultMessage:
-            'No accessible pages or databases found. Please open the target page/database in Notion → click ... (top-right) → Add connections → select your PAT integration → Confirm.',
+            'No top-level pages/databases found in your workspace root. Please open a page/database at the Notion workspace root → click ... (top-right) → Add connections → select your PAT integration → Confirm. Flip on "Show all pages" if your repository lives inside a subpage.',
         })
       );
+    }
+
+    // Write back to the matching cache slot only. Users who never flip the
+    // switch keep only the (smaller) root cache in memory.
+    if (showAllPages) {
+      this.cachedAllRepos = result;
+    } else {
+      this.cachedRootRepos = result;
     }
     this.repositories = result;
     return this.repositories;

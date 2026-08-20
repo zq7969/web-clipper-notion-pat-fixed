@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { QuestionCircleOutlined } from '@ant-design/icons';
 import { Form } from '@ant-design/compatible';
 import '@ant-design/compatible/assets/index.less';
-import { Modal, Select, Divider } from 'antd';
+import { Modal, Select, Divider, Switch } from 'antd';
 import { FormComponentProps } from '@ant-design/compatible/lib/form';
 import styles from './index.less';
 import { ImageHostingServiceMeta, BUILT_IN_IMAGE_HOSTING_ID } from 'common/backend';
@@ -56,6 +56,8 @@ const Page: React.FC<PageProps> = ({
     serviceForm,
     okText,
     oauthLink,
+    showAllPages,
+    setShowAllPages,
   } = useVerifiedAccount({ form, services: servicesMeta });
 
   const imageHostingWithBuiltIn = useMemo(() => {
@@ -142,6 +144,21 @@ const Page: React.FC<PageProps> = ({
                   loading={verifying}
                   repositories={repositories}
                 />
+              )}
+              {type === 'notion' && verified && (
+                <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Switch
+                    size="small"
+                    checked={showAllPages}
+                    disabled={verifying}
+                    onChange={(c) => setShowAllPages(!!c)}
+                  />
+                  <span style={{ fontSize: 12, color: '#595959' }}>
+                    {showAllPages
+                      ? '显示全部页面（含子页面 / 嵌套数据库）'
+                      : '仅显示工作区根目录'}
+                  </span>
+                </div>
               )}
             </Form.Item>
             <Form.Item

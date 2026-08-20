@@ -69,10 +69,20 @@ export interface ServiceMeta {
 
 export interface UpdateTOCRequest {}
 
+export interface GetRepositoriesOptions {
+  /**
+   * When true, the backend returns all accessible repositories including nested
+   * sub-pages / sub-databases. When false or unset, only top-level / workspace
+   * root items are returned (currently applied by the Notion service only;
+   * other backends ignore this flag and keep their existing behaviour).
+   */
+  showAllPages?: boolean;
+}
+
 export interface DocumentService<T = any> {
   getId(): string;
 
-  getRepositories(): Promise<Repository[]>;
+  getRepositories(options?: GetRepositoriesOptions): Promise<Repository[]>;
 
   createDocument(request: T): Promise<CompleteStatus | void>;
 

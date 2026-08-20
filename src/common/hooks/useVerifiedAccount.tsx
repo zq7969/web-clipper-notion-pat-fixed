@@ -23,6 +23,8 @@ const useVerifiedAccount = ({ form, services, initAccount }: UseVerifiedAccountP
   const [type, _setType] = useState<string>(
     initAccount ? initAccount.type : Object.values(services)[0].type
   );
+  // Default = root-only. User can toggle to show nested pages / databases.
+  const [showAllPages, setShowAllPages] = useState<boolean>(false);
   const service = services[type];
   const changeType = (type: string) => {
     _setType(type);
@@ -34,11 +36,11 @@ const useVerifiedAccount = ({ form, services, initAccount }: UseVerifiedAccountP
       const Service = service.service;
       const instance = new Service(info);
       const userInfo = await instance.getUserInfo();
-      const repositories = await instance.getRepositories();
+      const repositories = await instance.getRepositories({ showAllPages });
       const id = await instance.getId();
       return { userInfo, repositories, id };
     },
-    [service],
+    [service, showAllPages],
     {
       auto: false,
       onError: e => {
@@ -111,12 +113,17 @@ const useVerifiedAccount = ({ form, services, initAccount }: UseVerifiedAccountP
   const verifiedRef = useRef(accountStatus.verified);
   verifiedRef.current = accountStatus.verified;
 
+  // Re-fetch repositories on two occasions:
+  //   a) First-time auto-run after a successful verify (keeps existing behaviour);
+  //   b) User toggles the showAllPages switch while already verified (so the
+  //      dropdown re-renders without having to re-paste the PAT).
   useEffect(() => {
     if (!verifiedRef.current || !formInfo) {
       return;
     }
     run(formInfo);
-  }, [verifiedRef, formInfo, run, form]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [verifiedRef, formInfo, run, showAllPages]);
 
   return {
     type,
@@ -129,6 +136,8 @@ const useVerifiedAccount = ({ form, services, initAccount }: UseVerifiedAccountP
     serviceForm,
     okText,
     oauthLink,
+    showAllPages,
+    setShowAllPages,
   };
 };
 export default useVerifiedAccount;
