@@ -19,21 +19,6 @@ import { pack } from './utils/pack';
     distDir: path.join(__dirname, '../dist'),
     fileName: 'web-clipper-firefox.zip',
   });
-  const manifestConfig = path.join(__dirname, '../dist/manifest.json');
-  const content = fs.readFileSync(manifestConfig, 'utf-8');
-  const manifest = JSON.parse(content);
-  manifest.browser_specific_settings = {
-    gecko: {
-      id: '{3fbb1f97-0acf-49a0-8348-36e91bef22ea}',
-    },
-  };
-  manifest.name = 'Universal Web Clipper';
-  fs.writeFileSync(manifestConfig, JSON.stringify(manifest, null, 2));
-  await pack({
-    releaseDir,
-    distDir: path.join(__dirname, '../dist'),
-    fileName: 'web-clipper-firefox-store.zip',
-  });
 })();
 
 function build() {
