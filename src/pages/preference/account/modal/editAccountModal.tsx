@@ -149,9 +149,18 @@ const Page: React.FC<PageProps> = ({
                 onChange={(c) => setShowAllPages(!!c)}
               />
               <span style={{ fontSize: 12, color: '#595959' }}>
-                {showAllPages
-                  ? '显示全部页面（含子页面 / 嵌套数据库）'
-                  : '仅显示工作区根目录'}
+                <FormattedMessage
+                  id={
+                    showAllPages
+                      ? 'backend.services.notion.form.showAllPages.on'
+                      : 'backend.services.notion.form.showAllPages.off'
+                  }
+                  defaultMessage={
+                    showAllPages
+                      ? 'Show all pages (incl. sub-pages / nested databases)'
+                      : 'Workspace root only'
+                  }
+                />
               </span>
             </div>
           )}

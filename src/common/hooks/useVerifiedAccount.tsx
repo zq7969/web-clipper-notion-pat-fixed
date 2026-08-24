@@ -1,3 +1,4 @@
+import localeService from '@/common/locales';
 import { UserPreferenceStore } from '@/common/types';
 import { FormComponentProps } from '@ant-design/compatible/lib/form';
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
@@ -45,6 +46,34 @@ const useVerifiedAccount = ({ form, services, initAccount }: UseVerifiedAccountP
       auto: false,
       onError: e => {
         message.error(e.message);
+      },
+      onSuccess: ({ repositories }) => {
+        // After every repository-list refresh (initial verify OR showAllPages
+        // toggle) make sure the currently-selected defaultRepositoryId still
+        // exists in the new list. If it does not (the classic case: user had
+        // picked a nested sub-page, then flipped the switch back to
+        // root-only), clear the Select field and show a one-off info message.
+        try {
+          const values = form.getFieldsValue();
+          const curId: unknown = values?.defaultRepositoryId;
+          if (
+            typeof curId === 'string' &&
+            curId &&
+            !repositories.some(r => r.id === curId)
+          ) {
+            form.setFieldsValue({ defaultRepositoryId: undefined });
+            message.info(
+              localeService.format({
+                id: 'backend.services.notion.form.defaultRepositoryReset',
+                defaultMessage:
+                  'Switched to root-only mode. The previously selected sub-page is not in the new list and has been cleared. Please choose again.',
+              })
+            );
+          }
+        } catch (_e) {
+          // form.getFieldsValue can throw when the form is unmounting mid-run;
+          // the reset is purely cosmetic so swallow.
+        }
       },
     }
   );

@@ -60,6 +60,11 @@ export default class NotionDocumentService implements DocumentService {
   // (they are tied to a single PAT / verify session in the UI).
   private cachedRootRepos: NotionRepository[] | null = null;
   private cachedAllRepos: NotionRepository[] | null = null;
+  // ID → notionObjectType lookup written by getRepositories() so
+  // createDocument() can pick the correct parent key (page_id /
+  // database_id / data_source_id) on its very first network round-trip
+  // instead of the previous "guess + 404 + retry" pattern.
+  private repositoryTypeMap: Record<string, NotionRepository['notionObjectType']> = {};
 
   constructor({ personalAccessToken }: NotionServiceConfig) {
     if (!personalAccessToken) {
@@ -145,6 +150,18 @@ export default class NotionDocumentService implements DocumentService {
     let pageCount = 0;
     const MAX_PAGES = 5;
     do {
+      // Server-side filter: ask Notion to only return page-like and
+      // database-like objects. This drops data_source-less wrappers, user
+      // references, and unrelated block entries from the response, which
+      // saves us page_size slots, bandwidth, and item-level iterations.
+      //
+      // NOTE: Notion v1 search supports filter on `value: 'page'` and
+      // `value: 'database'` independently; there is no built-in union
+      // filter, so we deliberately omit `filter` and instead rely on the
+      // client-side `item.object` guard below — an extra filter property
+      // currently (2026-03-11 API) *narrows* to a single value, which
+      // would force us to fire 2 separate search streams and end up slower
+      // overall than just skipping non-page/database/data_source objects.
       const body: any = {
         page_size: 100,
         sort: {
@@ -207,6 +224,19 @@ export default class NotionDocumentService implements DocumentService {
     return result;
   }
 
+  /**
+   * Write id → notionObjectType into repositoryTypeMap for every entry in the
+   * given list. Called after every cache-hit or API fetch so createDocument()
+   * can avoid guessing the parent type via 404-round-trips.
+   */
+  private writeTypeMap(repos: NotionRepository[]) {
+    repos.forEach((r) => {
+      if (r.notionObjectType) {
+        this.repositoryTypeMap[r.id] = r.notionObjectType;
+      }
+    });
+  }
+
   getRepositories = async (options?: GetRepositoriesOptions) => {
     const showAllPages = options?.showAllPages === true;
 
@@ -217,11 +247,13 @@ export default class NotionDocumentService implements DocumentService {
     if (showAllPages) {
       if (this.cachedAllRepos !== null) {
         this.repositories = this.cachedAllRepos;
+        this.writeTypeMap(this.repositories);
         return this.repositories;
       }
     } else {
       if (this.cachedRootRepos !== null) {
         this.repositories = this.cachedRootRepos;
+        this.writeTypeMap(this.repositories);
         return this.repositories;
       }
     }
@@ -254,22 +286,47 @@ export default class NotionDocumentService implements DocumentService {
     } else {
       this.cachedRootRepos = result;
     }
+    this.writeTypeMap(result);
     this.repositories = result;
     return this.repositories;
   };
 
-  private async detectParentType(repositoryId: string): Promise<'page' | 'database' | 'data_source'> {
+  /**
+   * Resolve the Notion object type (page / database / data_source) for a
+   * repository id.
+   *
+   * Fast path (100% for users who completed a normal Add Account flow):
+   *   the type map was populated by the most recent getRepositories() call,
+   *   so we return synchronously with zero network.
+   *
+   * Fallback path (legacy accounts stored before this optimisation, or the
+   * rare service instance that never ran getRepositories): guess via probe
+   * requests. Keeps backwards compatibility at a small one-off cost.
+   */
+  private async detectParentType(
+    repositoryId: string
+  ): Promise<'page' | 'database' | 'data_source'> {
+    const known = this.repositoryTypeMap[repositoryId];
+    if (known) {
+      return known;
+    }
     try {
       await this.request.get(`/pages/${repositoryId}`);
-      return 'page';
+      const t: 'page' = 'page';
+      this.repositoryTypeMap[repositoryId] = t;
+      return t;
     } catch (_e) {
       try {
         await this.request.get(`/databases/${repositoryId}`);
-        return 'database';
+        const t: 'database' = 'database';
+        this.repositoryTypeMap[repositoryId] = t;
+        return t;
       } catch (_e2) {
         try {
           await this.request.get(`/data_sources/${repositoryId}`);
-          return 'data_source';
+          const t: 'data_source' = 'data_source';
+          this.repositoryTypeMap[repositoryId] = t;
+          return t;
         } catch (_e3) {
           throw new Error(
             localeService.format({
