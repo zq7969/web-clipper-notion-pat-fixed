@@ -25,6 +25,32 @@ import { asyncUpdateAccount } from '@/actions/account';
 import { channel } from 'redux-saga';
 import { IExtensionService, IExtensionContainer } from '@/service/common/extension';
 import { ExtensionType } from '@/extensions/common';
+import { localStorageService } from '@/common/chrome/storage';
+
+const REPO_CACHE_PREFIX = 'clipper.repos.';
+
+function readCachedRepos(accountId: string): any[] | null {
+  try {
+    const raw = localStorageService.get<string>(`${REPO_CACHE_PREFIX}${accountId}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (_e) {}
+  return null;
+}
+
+function writeCachedRepos(accountId: string, repos: any[]): void {
+  try {
+    localStorageService.set(`${REPO_CACHE_PREFIX}${accountId}`, JSON.stringify(repos));
+  } catch (_e) {}
+}
+
+export function clearRepoCache(accountId: string): void {
+  localStorageService.delete(`${REPO_CACHE_PREFIX}${accountId}`);
+}
 
 const defaultState: ClipperStore = {
   clipperHeaderForm: {
@@ -109,32 +135,35 @@ const model = new DvaModelBuilder(defaultState, 'clipper')
         return;
       }
     }
-    let repositories = [];
-    try {
-      repositories = yield call(documentService.getRepositories);
-    } catch (error) {
-      if (error instanceof UnauthorizedError) {
-        if (documentService.refreshToken) {
-          const newInfo = yield call(documentService.refreshToken, info);
-          yield put(
-            asyncUpdateAccount({
-              id,
-              account: {
-                ...account,
-                info: newInfo,
-              },
-              userInfo,
-              newId: id,
-              callback: () => {
-                actionChannel.put(asyncChangeAccount.started({ id }));
-              },
-            })
-          );
-          return;
+    let repositories = readCachedRepos(id);
+    if (!repositories) {
+      try {
+        repositories = yield call(documentService.getRepositories);
+        writeCachedRepos(id, repositories);
+      } catch (error) {
+        if (error instanceof UnauthorizedError) {
+          if (documentService.refreshToken) {
+            const newInfo = yield call(documentService.refreshToken, info);
+            yield put(
+              asyncUpdateAccount({
+                id,
+                account: {
+                  ...account,
+                  info: newInfo,
+                },
+                userInfo,
+                newId: id,
+                callback: () => {
+                  actionChannel.put(asyncChangeAccount.started({ id }));
+                },
+              })
+            );
+            return;
+          }
+          throw new Error('Filed to load Repositories,Unauthorized.');
+        } else {
+          throw error;
         }
-        throw new Error('Filed to load Repositories,Unauthorized.');
-      } else {
-        throw error;
       }
     }
     backend.setDocumentService(documentService);

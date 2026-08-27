@@ -20,11 +20,14 @@ export class TypedCommonStorage implements TypedCommonStorageInterface {
   }
 
   getPreference = async (): Promise<PreferenceStorage> => {
-    const defaultPluginId = await this.getDefaultPluginId();
-    const showLineNumber = await this.getShowLineNumber();
-    const liveRendering = await this.getLiveRendering();
-    const imageHosting = await this.getImageHosting();
-    const iconColor = await this.getIconColor();
+    const [defaultPluginId, showLineNumber, liveRendering, imageHosting, iconColor] =
+      await Promise.all([
+        this.getDefaultPluginId(),
+        this.getShowLineNumber(),
+        this.getLiveRendering(),
+        this.getImageHosting(),
+        this.getIconColor(),
+      ]);
     return {
       defaultPluginId,
       showLineNumber,

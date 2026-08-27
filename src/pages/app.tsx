@@ -41,9 +41,11 @@ function withTool(WrappedComponent: any): any {
 }
 
 export default async () => {
-  await syncStorageService.init();
-  await localStorageService.init();
-  await localeService.init();
+  await Promise.all([
+    syncStorageService.init(),
+    localStorageService.init(),
+    localeService.init(),
+  ]);
   Container.get(IConfigService).load();
   await Container.get(IPreferenceService).init();
   const app = dva({

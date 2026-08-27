@@ -8,17 +8,29 @@ export * from './interface';
 
 const serviceContext = require.context('./services', true, /index.ts$/);
 
+let cachedServices: ServiceMeta[] | null = null;
+
 const getServices = (): ServiceMeta[] => {
-  return serviceContext.keys().map(key => {
+  if (cachedServices) {
+    return cachedServices;
+  }
+  cachedServices = serviceContext.keys().map(key => {
     return serviceContext(key).default() as ServiceMeta;
   });
+  return cachedServices;
 };
 const imageHostingContext = require.context('./imageHosting', true, /index.ts$/);
 
+let cachedImageHostingServices: ImageHostingServiceMeta[] | null = null;
+
 const getImageHostingServices = (): ImageHostingServiceMeta[] => {
-  return imageHostingContext.keys().map(key => {
+  if (cachedImageHostingServices) {
+    return cachedImageHostingServices;
+  }
+  cachedImageHostingServices = imageHostingContext.keys().map(key => {
     return imageHostingContext(key).default() as ImageHostingServiceMeta;
   });
+  return cachedImageHostingServices;
 };
 
 export function documentServiceFactory(type: string, info?: any) {

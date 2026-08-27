@@ -1,7 +1,7 @@
 import update from 'immutability-helper';
 import { DvaModelBuilder, removeActionNamespace } from 'dva-model-creator';
 import { GlobalStore, AccountPreference } from '@/common/types';
-import { syncStorageService } from '@/common/chrome/storage';
+import { syncStorageService, localStorageService } from '@/common/chrome/storage';
 import {
   initAccounts,
   asyncAddAccount,
@@ -12,6 +12,12 @@ import {
 import { asyncChangeAccount } from '@/actions/clipper';
 import { message } from 'antd';
 import { getServices } from '@/common/backend';
+
+const REPO_CACHE_PREFIX = 'clipper.repos.';
+
+function clearRepoCache(accountId: string): void {
+  localStorageService.delete(`${REPO_CACHE_PREFIX}${accountId}`);
+}
 
 const initState: GlobalStore['account'] = {
   accounts: [],
@@ -39,7 +45,12 @@ model
     if (typeof accountsString !== 'string') {
       accountsString = JSON.stringify(accountsString);
     }
-    let accounts = <AccountPreference[]>JSON.parse(accountsString);
+    let accounts: AccountPreference[];
+    try {
+      accounts = <AccountPreference[]>JSON.parse(accountsString);
+    } catch (_e) {
+      accounts = [];
+    }
     accounts = accounts.filter(account => getServices().some(o => o.type === account.type));
     yield put(initAccounts.done({ result: { accounts, defaultAccountId } }));
   })
@@ -73,6 +84,7 @@ model.takeEvery(asyncAddAccount.started, function*(payload, { select, call }) {
   if (newAccounts.length === 1) {
     yield call(syncStorageService.set, 'defaultAccountId', userPreference.id);
   }
+  clearRepoCache(userPreference.id);
   callback();
   yield call(syncStorageService.set, 'accounts', JSON.stringify(newAccounts));
 });
@@ -89,6 +101,7 @@ model.takeEvery(asyncDeleteAccount.started, function*({ id }, { select, call }) 
     }
   }
   yield call(syncStorageService.set, 'accounts', JSON.stringify(newAccounts));
+  clearRepoCache(id);
 });
 
 model
@@ -132,6 +145,10 @@ model.takeEvery(asyncUpdateAccount, function*(payload, { select, put, call }) {
     },
   });
   yield call(syncStorageService.set, 'accounts', JSON.stringify(result));
+  clearRepoCache(id);
+  if (newId !== id) {
+    clearRepoCache(newId);
+  }
   const currentAccountId: string = yield select((g: GlobalStore) => g.clipper.currentAccountId);
   if (id === defaultAccountId) {
     yield put.resolve(asyncUpdateDefaultAccountId.started({ id: newId }));
