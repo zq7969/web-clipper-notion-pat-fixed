@@ -12,6 +12,8 @@ type UseVerifiedAccountProps = FormComponentProps & {
   initAccount?: any;
 };
 
+type VerifyMode = 'full' | 'repos';
+
 function useDeepCompareMemoize<T>(value: T) {
   const ref = React.useRef<T>();
   if (!isEqual(value, ref.current)) {
@@ -21,24 +23,85 @@ function useDeepCompareMemoize<T>(value: T) {
 }
 
 const useVerifiedAccount = ({ form, services, initAccount }: UseVerifiedAccountProps) => {
-  const [type, _setType] = useState<string>(
-    initAccount ? initAccount.type : Object.values(services)[0].type
-  );
+  const servicesList = Object.values(services || {});
+  const [type, _setType] = useState<string>(() => {
+    if (
+      initAccount?.type &&
+      services &&
+      Object.prototype.hasOwnProperty.call(services, initAccount.type)
+    ) {
+      return initAccount.type;
+    }
+    if (servicesList.length > 0 && servicesList[0]?.type) {
+      return servicesList[0].type;
+    }
+    return '';
+  });
   // Default = root-only. User can toggle to show nested pages / databases.
   const [showAllPages, setShowAllPages] = useState<boolean>(false);
-  const service = services[type];
-  const changeType = (type: string) => {
-    _setType(type);
+  const service =
+    (services && type && services[type]) || servicesList[0] || null;
+  // Cache the last-constructed service + input info so showAllPages toggles
+  // can skip re-running getUserInfo() / re-creating the service instance
+  // (P2 BUG-009 + makes toggling feel near-instant when caches are hot).
+  const instanceRef = useRef<any>(null);
+  const lastInfoRef = useRef<any>(null);
+  const changeType = (nextType: string) => {
+    _setType(nextType);
+    instanceRef.current = null;
+    lastInfoRef.current = null;
     const values = form.getFieldsValue();
     form.resetFields(Object.keys(omit(values, ['type'])));
   };
   const { data, run, loading } = useFetch(
-    async (info: any) => {
+    async ({ info, mode }: { info: any; mode: VerifyMode }) => {
+      if (!service || !service.service) {
+        throw new Error(
+          localeService.format({
+            id: 'preference.accountList.noService',
+            defaultMessage: 'No backend service configured. Please reload the extension.',
+          })
+        );
+      }
       const Service = service.service;
-      const instance = new Service(info);
-      const userInfo = await instance.getUserInfo();
+      let instance: any;
+      const reuseInstance =
+        mode === 'repos' &&
+        instanceRef.current &&
+        isEqual(info, lastInfoRef.current);
+      if (reuseInstance) {
+        instance = instanceRef.current;
+      } else {
+        instance = new Service(info);
+        instanceRef.current = instance;
+        lastInfoRef.current = info;
+      }
+
+      let userInfo = data?.userInfo ?? null;
+      let id = data?.id ?? null;
+
+      if (mode === 'full') {
+        // BUG-003 / P0: soft 403 on /users/me (missing "Read user information")
+        // must NOT fail the whole verification — getRepositories() should
+        // still work. Any other error from getUserInfo() still bubbles up.
+        try {
+          userInfo = await instance.getUserInfo();
+        } catch (err: any) {
+          if (err && err.notionSoft403Kind === 'read_user_information') {
+            console.warn(
+              '[useVerifiedAccount] getUserInfo returned soft 403, continuing to repository list:',
+              err?.message
+            );
+          } else {
+            throw err;
+          }
+        }
+        // getId() has a built-in FNV-1a PAT fallback inside Notion service;
+        // no need to guard it separately here.
+        id = instance.getId();
+      }
+
       const repositories = await instance.getRepositories({ showAllPages });
-      const id = await instance.getId();
       return { userInfo, repositories, id };
     },
     [service, showAllPages],
@@ -84,7 +147,7 @@ const useVerifiedAccount = ({ form, services, initAccount }: UseVerifiedAccountP
         return;
       }
       const { type, defaultRepositoryId, imageHosting, ...info } = values;
-      run(info);
+      run({ info, mode: 'full' });
     });
   }, [form, run]);
 
@@ -96,7 +159,7 @@ const useVerifiedAccount = ({ form, services, initAccount }: UseVerifiedAccountP
   };
 
   let serviceForm = useMemo(() => {
-    if (!service.form) {
+    if (!service || !service.form) {
       return null;
     }
     return (
@@ -108,7 +171,7 @@ const useVerifiedAccount = ({ form, services, initAccount }: UseVerifiedAccountP
       />
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountStatus.verified, form, initAccount, loadAccount, service.form]);
+  }, [accountStatus.verified, form, initAccount, loadAccount, service && service.form]);
 
   const okText = useMemo(() => {
     if (loading) {
@@ -122,12 +185,12 @@ const useVerifiedAccount = ({ form, services, initAccount }: UseVerifiedAccountP
   }, [accountStatus.verified, loading]);
 
   let oauthLink = useMemo(() => {
-    return service.oauthUrl ? (
-      <a href={service.oauthUrl} target="_blank">
+    return service && service.oauthUrl ? (
+      <a href={service.oauthUrl} target="_blank" rel="noopener noreferrer">
         <FormattedMessage id="preference.accountList.login" defaultMessage="Login" />
       </a>
     ) : null;
-  }, [service.oauthUrl]);
+  }, [service && service.oauthUrl]);
 
   const _formInfo = useMemo(() => {
     const values = form.getFieldsValue();
@@ -142,15 +205,48 @@ const useVerifiedAccount = ({ form, services, initAccount }: UseVerifiedAccountP
   const verifiedRef = useRef(accountStatus.verified);
   verifiedRef.current = accountStatus.verified;
 
+  // Expose a stable backward-compatible entry for external callers.
+  // Callers pass either:
+  //   a) a flat { personalAccessToken, ... } from form submit values, or
+  //   b) a nested AccountPreference { type, id, info: { ... }, ... }.
+  // Normalize to flat info so the Service constructor always sees the right shape.
+  const verifyAccount = useCallback(
+    (arg: any) => {
+      let flatInfo = arg;
+      if (
+        arg &&
+        typeof arg === 'object' &&
+        arg.info &&
+        typeof arg.info === 'object' &&
+        typeof arg.info?.personalAccessToken === 'string'
+      ) {
+        flatInfo = arg.info;
+      } else if (
+        arg &&
+        typeof arg === 'object' &&
+        typeof arg.personalAccessToken === 'string'
+      ) {
+        flatInfo = arg;
+      }
+      return run({ info: flatInfo, mode: 'full' });
+    },
+    [run]
+  );
+
   // Re-fetch repositories on two occasions:
   //   a) First-time auto-run after a successful verify (keeps existing behaviour);
   //   b) User toggles the showAllPages switch while already verified (so the
   //      dropdown re-renders without having to re-paste the PAT).
+  //
+  // P2 BUG-009: since verifiedRef.current==true implies data already carries
+  // userInfo+id, we always use repos-only mode here and skip the extra
+  // GET /users/me round-trip. Caches (service instance ref + repo caches
+  // inside Notion service) make this near-instant on subsequent toggles.
   useEffect(() => {
     if (!verifiedRef.current || !formInfo) {
       return;
     }
-    run(formInfo);
+    run({ info: formInfo, mode: 'repos' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [verifiedRef, formInfo, run, showAllPages]);
 
@@ -159,7 +255,7 @@ const useVerifiedAccount = ({ form, services, initAccount }: UseVerifiedAccountP
     service,
     accountStatus: accountStatus,
     verifying: loading,
-    verifyAccount: run,
+    verifyAccount,
     loadAccount,
     changeType,
     serviceForm,

@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import { QuestionCircleOutlined } from '@ant-design/icons';
 import { Form } from '@ant-design/compatible';
 import '@ant-design/compatible/assets/index.less';
@@ -63,9 +63,6 @@ const Page: React.FC<PageProps> = ({
     initAccount: currentAccount,
   });
 
-  useEffect(() => {
-    verifyAccount(currentAccount);
-  }, [currentAccount, verifyAccount]);
 
   const imageHostingWithBuiltIn = useMemo(() => {
     const res = [...imageHosting];

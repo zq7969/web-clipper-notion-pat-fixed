@@ -2,8 +2,8 @@ name: Sync Upstream Release & Auto Release (Notion PAT Fixed)
 
 on:
   schedule:
-    # Every day at UTC 00:00 = Beijing Time 08:00
-    - cron: '0 0 * * *'
+    # Every Monday at UTC 00:00 = Beijing Time 08:00
+    - cron: '0 0 * * 1'
   workflow_dispatch:
     description: 'Manual trigger: check upstream latest release and sync if there is a new tag'
 
@@ -42,9 +42,13 @@ jobs:
 
       - name: Query official latest upstream release tag
         id: query_upstream
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Call public GitHub API for latest release of webclipper/web-clipper
-          NEW_TAG=$(curl -fsSL "https://api.github.com/repos/webclipper/web-clipper/releases/latest" \
+          NEW_TAG=$(curl -fsSL \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/webclipper/web-clipper/releases/latest" \
             | python3 -c "import sys, json; print(json.load(sys.stdin)['tag_name'])")
           if [ -z "$NEW_TAG" ]; then
             echo "ERROR: failed to query upstream latest release tag"
