@@ -1,4 +1,5 @@
 {
+  "backend.services.obsidian.clipboardFailed": "无法将正文复制到剪贴板，请将焦点切回剪藏窗口后重试保存。",
   "auth.modal.title": "账户配置",
   "backend.error.store": "插件商店不允许执行脚本",
   "backend.imageHosting.baklib.builtInRemark": "Baklib 内置图床",
@@ -108,6 +109,8 @@
   "backend.services.server_chan.accessToken.message": "请输入 AccessToken",
   "backend.services.server_chan.name": "Server酱",
   "backend.services.siyuan.form.accessToken": "",
+  "backend.services.siyuan.form.authentication": "授权",
+  "backend.services.siyuan.form.origin": "接口地址",
   "backend.services.siyuan.name": "思源笔记",
   "backend.services.siyuan.notes": "笔记本",
   "backend.services.ticktick.headerForm.applyTags": "选择标签",

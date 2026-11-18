@@ -73,5 +73,4 @@ export interface RecentPages {
 
 export interface NotionRepository extends Repository {
   pageType: string;
-  notionObjectType: 'page' | 'database' | 'data_source';
 }

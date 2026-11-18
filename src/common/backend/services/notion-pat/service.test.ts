@@ -9,7 +9,7 @@
  */
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 import axios from 'axios';
-import NotionDocumentService from '@/common/backend/services/notion/service';
+import NotionDocumentService from '@/common/backend/services/notion-pat/service';
 
 // localeService is imported (side-effect) by service.ts and needs intl to be
 // initialised before `format` calls happen.  We keep it simple: replace the

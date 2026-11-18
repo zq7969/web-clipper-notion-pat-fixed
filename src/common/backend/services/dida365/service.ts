@@ -42,7 +42,10 @@ export default class Dida365DocumentService implements DocumentService {
 
   constructor() {
     const request = extend({
-      prefix: `https://api.dida365.com/api/v2/`,
+      prefix: `https://api.dida365.com/api/`,
+      credentials: 'include',
+      // 滴答写入接口要求声明客户端平台，否则返回 access_forbidden。
+      headers: { 'X-Device': JSON.stringify({ platform: 'web' }) },
     });
     request.interceptors.response.use(
       (response) => {
@@ -67,7 +70,7 @@ export default class Dida365DocumentService implements DocumentService {
   };
 
   getUserInfo = async () => {
-    const response = await this.request.get<Dida365Profile>('user/profile');
+    const response = await this.request.get<Dida365Profile>('v2/user/profile');
     return {
       name: response.name,
       avatar: response.picture,
@@ -77,37 +80,36 @@ export default class Dida365DocumentService implements DocumentService {
   };
 
   getTags = async (): Promise<string[]> => {
-    const dida365CheckResponse = await this.request.get<Dida365CheckResponse>(`batch/check/0`);
-    return dida365CheckResponse.tags.map((o) => o.name);
+    const dida365CheckResponse = await this.request.get<Dida365CheckResponse>(`v3/batch/check/0`);
+    return (dida365CheckResponse.tags ?? []).map((o) => o.name);
   };
 
   getRepositories = async (): Promise<Repository[]> => {
-    const dida365CheckResponse = await this.request.get<Dida365CheckResponse>(`batch/check/0`);
+    const dida365CheckResponse = await this.request.get<Dida365CheckResponse>(`v3/batch/check/0`);
     const groupMap = new Map<string, string>();
-    if (dida365CheckResponse.projectGroups) { // 检查 projectGroups 是否存在
+    if (dida365CheckResponse.projectGroups) {
+      // 检查 projectGroups 是否存在
       dida365CheckResponse.projectGroups.forEach((group) => {
         groupMap.set(group.id, group.name);
       });
     }
 
+    const rootGroupName = localeService.format({
+      id: 'backend.services.dida365.rootGroup',
+      defaultMessage: 'Root',
+    });
     return dida365CheckResponse.projectProfiles
       .filter((o) => !o.closed)
-      .map(({ id, name, groupId }) => ({
-        id: id,
-        name: name,
-        groupId: groupId
-          ? groupId
-          : localeService.format({
-              id: 'backend.services.dida365.rootGroup',
-              defaultMessage: 'Root',
-            }),
-        groupName: groupId
-          ? groupMap.get(groupId)!
-          : localeService.format({
-              id: 'backend.services.dida365.rootGroup',
-              defaultMessage: 'Root',
-            }),
-      }));
+      .map(({ id, name, groupId }) => {
+        // NONE 表示未分组；已删除或缺失的分组也归入根目录。
+        const groupName = groupId && groupId !== 'NONE' ? groupMap.get(groupId) : undefined;
+        return {
+          id,
+          name,
+          groupId: groupName ? groupId : 'NONE',
+          groupName: groupName || rootGroupName,
+        };
+      });
   };
 
   createDocument = async (request: Dida365CreateDocumentRequest): Promise<CompleteStatus> => {
@@ -123,50 +125,59 @@ export default class Dida365DocumentService implements DocumentService {
       ],
     });
 
-    const settings = await this.request.get<{ timeZone: string }>(
-      await webRequestService.changeUrl('user/preferences/settings?includeWeb=true', header)
-    );
-
     const id = generateUuid().replace(/-/g, '').slice(0, 24);
-    const data = {
-      add: [
+    try {
+      const settings = await this.request.get<{ timeZone: string }>(
+        await webRequestService.changeUrl('v2/user/preferences/settings?includeWeb=true', header)
+      );
+
+      const data = {
+        add: [
+          {
+            items: [],
+            reminders: [],
+            exDate: [],
+            dueDate: null,
+            priority: 0,
+            progress: 0,
+            assignee: null,
+            kind: 'NOTE',
+            sortOrder: -4611733297427382000,
+            startDate: null,
+            isFloating: false,
+            status: 0,
+            deleted: 0,
+            tags: request.tags,
+            projectId: request.repositoryId,
+            title: request.title,
+            content: request.content,
+            timeZone: settings.timeZone,
+            id: id,
+          },
+        ],
+        update: [],
+        delete: [],
+      };
+
+      const result = await this.request.post<{ id2error?: Record<string, unknown> }>(
+        await webRequestService.changeUrl('v2/batch/task', header),
         {
-          items: [],
-          reminders: [],
-          exDate: [],
-          dueDate: null,
-          priority: 0,
-          progress: 0,
-          assignee: null,
-          kind: 'NOTE',
-          sortOrder: -4611733297427382000,
-          startDate: null,
-          isFloating: false,
-          status: 0,
-          deleted: 0,
-          tags: request.tags,
-          projectId: request.repositoryId,
-          title: request.title,
-          content: request.content,
-          timeZone: settings.timeZone,
-          id: id,
-        },
-      ],
-      update: [],
-      delete: [],
-    };
+          data: data,
+          headers: {
+            [header.name]: header.value,
+          },
+        }
+      );
 
-    await this.request.post(await webRequestService.changeUrl('batch/task', header), {
-      data: data,
-      headers: {
-        [header.name]: header.value,
-      },
-    });
-
-    await webRequestService.end(header);
+      if (result.id2error && Object.keys(result.id2error).length) {
+        throw new Error(`Dida365: ${JSON.stringify(result.id2error)}`);
+      }
+    } finally {
+      await webRequestService.end(header);
+    }
 
     return {
-      href: `https://dida365.com/#p/${request.repositoryId}/tasks/${id}`,
+      href: `https://dida365.com/webapp/#p/${request.repositoryId}/tasks/${id}`,
     };
   };
 }

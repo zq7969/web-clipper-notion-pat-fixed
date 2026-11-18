@@ -51,6 +51,16 @@ model
     } catch (_e) {
       accounts = [];
     }
+    // Migration: before the cookie/PAT split, token accounts were stored under
+    // type 'notion'. Re-tag legacy PAT accounts (detected by their token) to
+    // 'notion-pat' so they keep using the token service rather than the restored
+    // upstream cookie service. Idempotent; safe to run on every load.
+    accounts = accounts.map(account => {
+      if (account.type === 'notion' && typeof account.personalAccessToken === 'string') {
+        return { ...account, type: 'notion-pat' };
+      }
+      return account;
+    });
     accounts = accounts.filter(account => getServices().some(o => o.type === account.type));
     yield put(initAccounts.done({ result: { accounts, defaultAccountId } }));
   })

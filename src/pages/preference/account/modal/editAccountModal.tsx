@@ -137,7 +137,7 @@ const Page: React.FC<PageProps> = ({
               repositories={repositories}
             />
           )}
-          {type === 'notion' && verified && (
+          {type === 'notion-pat' && verified && (
             <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
               <Switch
                 size="small"
